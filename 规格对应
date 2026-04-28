@@ -1,0 +1,68 @@
+Sub MatchSpecAndArrangeNeat()
+    Dim wsSpec As Worksheet, wsData As Worksheet
+    Dim newWB As Workbook
+    Dim lastRowSpec As Long, lastRowData As Long
+    Dim i As Long, j As Long, k As Long
+    Dim specNum As String
+    Dim findRng As Range, firstAdd As String
+    Dim outRow As Long
+    
+    '========= 这里改成你实际的工作表名 =========
+    Set wsSpec = ThisWorkbook.Sheets("规格清单")
+    Set wsData = ThisWorkbook.Sheets("原始数据")
+    '===========================================
+    
+    '关闭卡顿、弹窗
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    '新建输出文件
+    Set newWB = Workbooks.Add(xlWBATWorksheet)
+    outRow = 1
+    
+    '获取规格表最后一行
+    lastRowSpec = wsSpec.Cells(wsSpec.Rows.Count, "A").End(xlUp).Row
+    
+    '遍历每一个规格
+    For i = 2 To lastRowSpec '假设第一行是表头，从第2行开始
+        specNum = Trim(wsSpec.Cells(i, "A").Value)
+        If specNum = "" Then GoTo NextSpec
+        
+        '======== 1.先写入当前规格（单独一行）========
+        newWB.Sheets(1).Cells(outRow, 1).Value = "【规格】：" & specNum
+        newWB.Sheets(1).Cells(outRow, 1).Font.Bold = True
+        outRow = outRow + 1
+        
+        '======== 2.在数据表全局查找该规格 ========
+        Set findRng = Nothing
+        Set findRng = wsData.UsedRange.Find( _
+            What:=specNum, LookIn:=xlValues, LookAt:=xlWhole)
+        
+        If Not findRng Is Nothing Then
+            firstAdd = findRng.Address
+            Do
+                '复制匹配到的整行
+                findRng.EntireRow.Copy
+                newWB.Sheets(1).Cells(outRow, 1).PasteSpecial xlPasteValuesAndNumberFormats
+                outRow = outRow + 1
+                
+                Set findRng = wsData.UsedRange.FindNext(findRng)
+            Loop While findRng.Address <> firstAdd
+        End If
+        
+        '======== 3.分组留白排版：每组之间空一行 ========
+        outRow = outRow + 1
+        
+NextSpec:
+    Next i
+    
+    '自动适配列宽，优化排版
+    newWB.Sheets(1).UsedRange.EntireColumn.AutoFit
+    
+    '恢复系统设置
+    Application.CutCopyMode = False
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    
+    MsgBox "规格匹配完成！" & vbCrLf & "已自动分组排版、每组空行隔开", vbInformation
+End Sub
