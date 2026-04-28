@@ -1,0 +1,63 @@
+Sub ExportOneOrderAllSheet()
+    Dim searchStr As String
+    Dim ws As Worksheet
+    Dim findRng As Range
+    Dim unionRng As Range
+    Dim newWB As Workbook
+    Dim firstAddr As String
+    
+    '1.弹窗输入工单号
+    searchStr = InputBox("请输入需要保留的工单号：", "工单筛选导出")
+    If Trim(searchStr) = "" Then Exit Sub
+    
+    '关闭弹窗、防报错
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    '遍历所有工作表
+    For Each ws In ThisWorkbook.Worksheets
+        Set findRng = Nothing
+        Set unionRng = Nothing
+        
+        '在当前表查找工单号
+        Set findRng = ws.UsedRange.Find(What:=searchStr, LookIn:=xlValues, LookAt:=xlPart)
+        If Not findRng Is Nothing Then
+            firstAddr = findRng.Address
+            Do
+                '包含合并单元格整行加入选区
+                If unionRng Is Nothing Then
+                    Set unionRng = findRng.MergeArea.EntireRow
+                Else
+                    Set unionRng = Union(unionRng, findRng.MergeArea.EntireRow)
+                End If
+                Set findRng = ws.UsedRange.FindNext(findRng)
+            Loop While Not findRng Is Nothing And findRng.Address <> firstAddr
+        End If
+        
+        '当前表有匹配内容，复制到新工作簿
+        If Not unionRng Is Nothing Then
+            unionRng.Copy
+            If newWB Is Nothing Then
+                Set newWB = Workbooks.Add(xlWBATWorksheet)
+            End If
+            newWB.Sheets(1).Cells(Rows.Count, 1).End(xlUp).Offset(1).Paste
+            Application.CutCopyMode = False
+        End If
+    Next ws
+    
+    '保存并命名
+    If Not newWB Is Nothing Then
+        newWB.SaveAs Filename:=ThisWorkbook.Path & "\" & searchStr & ".xlsx", FileFormat:=xlOpenXMLWorkbook
+        MsgBox "已导出工单：" & searchStr & " 独立文件完成！", vbInformation
+        newWB.Close SaveChanges:=False
+    Else
+        '全程无匹配，静默结束不报错
+    End If
+    
+    '恢复设置
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    Set newWB = Nothing
+    Set unionRng = Nothing
+    Set findRng = Nothing
+End Sub
