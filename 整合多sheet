@@ -1,0 +1,85 @@
+Sub ADO汇总第一页_密码2026_自动保存同目录()
+    Dim fd As FileDialog
+    Dim selFiles As Variant
+    Dim fPath As Variant
+    Dim conn As Object, rs As Object
+    Dim newWb As Workbook
+    Dim sht As Worksheet
+    Dim fileName As String, savePath As String
+    Dim firstSheetName As String
+    
+    '1.弹窗选择多个表格
+    Set fd = Application.FileDialog(msoFileDialogFilePicker)
+    With fd
+        .Title = "请选择需要汇总的Excel表格"
+        .Filters.Clear
+        .Filters.Add "Excel文件", "*.xls;*.xlsx;*.xlsm"
+        .AllowMultiSelect = True
+        If .Show <> -1 Then
+            MsgBox "未选择文件，退出"
+            Exit Sub
+        End If
+        selFiles = .SelectedItems
+        '取第一个文件的文件夹，作为保存目录
+        savePath = Left(selFiles(1), InStrRev(selFiles(1), "\"))
+    End With
+
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    '新建空白工作簿，用来放所有sheet
+    Set newWb = Workbooks.Add(xlWBATWorksheet)
+    
+    '遍历所有选中文件
+    For Each fPath In selFiles
+        '提取纯文件名
+        fileName = Mid(fPath, InStrRev(fPath, "\") + 1)
+        
+        'ADO连接 固定密码2026
+        Set conn = CreateObject("ADODB.Connection")
+        Set rs = CreateObject("ADODB.Recordset")
+        
+        conn.ConnectionString = _
+        "Provider=Microsoft.ACE.OLEDB.12.0;" & _
+        "Data Source=" & fPath & ";" & _
+        "Extended Properties=""Excel 12.0 Xml;HDR=NO;Password=2026"";"
+        conn.Open
+        
+        '获取该文件第一个工作表名
+        Set rs = conn.OpenSchema(20)
+        firstSheetName = rs.Fields(0).Value
+        rs.Close
+        
+        '读取第一页全部数据
+        rs.Open "SELECT * FROM [" & firstSheetName & "$]", conn
+        
+        '新建工作表 + 命名为原文件名
+        Set sht = newWb.Sheets.Add(After:=newWb.Sheets(newWb.Sheets.Count))
+        sht.Name = Left(fileName, 31)
+        
+        '写入数据
+        If Not rs.EOF Then
+            sht.Range("A1").CopyFromRecordset rs
+        End If
+        
+        '释放
+        rs.Close: Set rs = Nothing
+        conn.Close: Set conn = Nothing
+    Next fPath
+    
+    '删除新建工作簿自带的多余空白Sheet
+    Do While newWb.Sheets.Count > 1
+        newWb.Sheets(1).Delete
+    Loop
+    
+    '另存到当前文件夹，命名：整合后的表格.xlsx
+    newWb.SaveAs Filename:=savePath & "整合后的表格.xlsx", FileFormat:=xlOpenXMLWorkbook
+    
+    '恢复设置
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    
+    MsgBox "全部完成！" & vbCrLf & _
+    "保存位置：" & savePath & vbCrLf & _
+    "文件名：整合后的表格.xlsx", vbInformation
+End Sub
