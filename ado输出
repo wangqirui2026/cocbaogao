@@ -1,0 +1,125 @@
+Sub ADO读取第一个工作表并生成新文件()
+    '禁用屏幕更新与警告，提升速度
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    Dim 原文件路径 As String
+    Dim 新文件路径 As String
+    Dim 连接字符串 As String
+    Dim SQL语句 As String
+    Dim 表名 As String
+    Dim 新工作簿 As Workbook
+    Dim 连接 As Object
+    Dim 记录集 As Object
+    
+    '--------------------------
+    '1. 弹出文件选择窗口
+    '--------------------------
+    With Application.FileDialog(msoFileDialogFilePicker)
+        .Title = "请选择要处理的Excel文件"
+        .Filters.Clear
+        .Filters.Add "Excel文件", "*.xls;*.xlsx;*.xlsm"
+        .AllowMultiSelect = False
+        
+        If .Show <> -1 Then
+            MsgBox "未选择文件，宏已取消！", vbExclamation
+            GoTo 结束清理
+        End If
+        
+        原文件路径 = .SelectedItems(1)
+    End With
+    
+    '--------------------------
+    '2. 创建ADO对象（无需打开文件）
+    '--------------------------
+    Set 连接 = CreateObject("ADODB.Connection")
+    Set 记录集 = CreateObject("ADODB.Recordset")
+    
+    '--------------------------
+    '3. 构建连接字符串（支持无密码 / 密码2026）
+    '--------------------------
+    If LCase(Right(原文件路径, 4)) = "xlsx" Or LCase(Right(原文件路径, 4)) = "xlsm" Then
+        'xlsx/xlsm 格式
+        连接字符串 = "Provider=Microsoft.ACE.OLEDB.12.0;" & _
+                      "Data Source=""" & 原文件路径 & """;" & _
+                      "Mode=Read;" & _  '只读模式
+                      "Extended Properties=""Excel 12.0 Xml;HDR=Yes;IMEX=1"";"
+    Else
+        'xls 格式
+        连接字符串 = "Provider=Microsoft.Jet.OLEDB.4.0;" & _
+                      "Data Source=""" & 原文件路径 & """;" & _
+                      "Mode=Read;" & _
+                      "Extended Properties=""Excel 8.0;HDR=Yes;IMEX=1"";"
+    End If
+    
+    '尝试无密码连接 → 失败则使用密码 2026
+    On Error Resume Next
+    连接.Open 连接字符串
+    
+    '无密码失败，使用密码2026重试
+    If Err.Number <> 0 Then
+        Err.Clear
+        连接字符串 = 连接字符串 & "Jet OLEDB:Database Password=2026;"
+        连接.Open 连接字符串
+        
+        If Err.Number <> 0 Then
+            MsgBox "文件无法打开：无密码/密码2026均失败！", vbCritical
+            GoTo 结束清理
+        End If
+    End If
+    On Error GoTo 0
+    
+    '--------------------------
+    '4. 获取第一个工作表名称（不管叫什么）
+    '--------------------------
+    表名 = 连接.OpenSchema(20).Fields("TABLE_NAME").Value '20=表结构
+    
+    '--------------------------
+    '5. SQL读取整个第一个工作表
+    '--------------------------
+    SQL语句 = "SELECT * FROM [" & 表名 & "]"
+    记录集.Open SQL语句, 连接, 1, 1 '1=adOpenKeyset,1=adLockReadOnly
+    
+    '--------------------------
+    '6. 创建新工作簿，粘贴数据到默认Sheet1
+    '--------------------------
+    Set 新工作簿 = Workbooks.Add(xlWBATWorksheet) '只创建1个工作表（默认Sheet1）
+    
+    '粘贴字段名（表头）
+    Dim i As Integer
+    For i = 0 To 记录集.Fields.Count - 1
+        新工作簿.Sheets(1).Cells(1, i + 1).Value = 记录集.Fields(i).Name
+    Next i
+    
+    '粘贴数据
+    新工作簿.Sheets(1).Range("A2").CopyFromRecordset 记录集
+    
+    '自动列宽
+    新工作簿.Sheets(1).UsedRange.EntireColumn.AutoFit
+    
+    '--------------------------
+    '7. 保存新文件：原文件名 + "-处理后"
+    '--------------------------
+    Dim 文件名前缀 As String
+    文件名前缀 = Left(原文件路径, InStrRev(原文件路径, ".") - 1)
+    新文件路径 = 文件名前缀 & "-处理后.xlsx"
+    
+    新工作簿.SaveAs Filename:=新文件路径, FileFormat:=xlOpenXMLWorkbook
+    
+    '--------------------------
+    '结束清理
+    '--------------------------
+结束清理:
+    On Error Resume Next
+    If Not 记录集 Is Nothing Then 记录集.Close
+    If Not 连接 Is Nothing Then 连接.Close
+    Set 记录集 = Nothing
+    Set 连接 = Nothing
+    
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    
+    If Dir(新文件路径) <> "" Then
+        MsgBox "处理完成！" & vbCrLf & 新文件路径, vbInformation
+    End If
+End Sub
